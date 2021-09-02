@@ -13,14 +13,14 @@ $bot->init('php://input');
 class Bot
 {
     // <bot_token> - созданный токен для нашего бота от @BotFather
-    private $botToken = "1835784897684:AAGGFhgekjHfColX8Sez8IWL_tWWQ6zP8Y";
+    private $botToken = "1858997684:AAGhfJtjjygjhofColX8Sez8IWL_tW7hbs4jP8Y";
     // адрес для запросов к API Telegram
     private $apiUrl = "https://api.telegram.org/bot";
 
     public function init($data)
     {
-        // Пароль для дуступа к боту
-		$pswd = '123';
+		require 'connect.php';
+		
 		
 		// создаем массив из пришедших данных от API Telegram
         $arrData = $this->getData($data);
@@ -38,49 +38,62 @@ class Bot
 			[["text" => "Сдать работу"], ["text" => "Вопрос учителю"]]
 		]);
 		
-		if ($this->inBaseOk($chat_id)!=1) {
-			if ($this->inBase($chat_id)==0) {
-				if ($message!=$pswd || $message=='/start') {
-					$dataSend = array(
-						'text' => "Введите пароль",
-						'chat_id' => $chat_id,
-					);
-					$this->requestToTelegram($dataSend, "sendMessage");
-				} elseif ($message==$pswd) {
-					$dataSend = array(
-						'text' => "Отлично. Теперь давайте знакомиться. Введите Ваше имя.",
-						'chat_id' => $chat_id,
-					);
-					require 'connect.php';
-					$conn->query("INSERT INTO bot_spisok (chatid, first_name, second_name, class, ok, theme, level) VALUES ('".$chat_id."', '0', '0', '0', '0', '0', '0')");
-					mysqli_close($conn);				
-					$this->requestToTelegram($dataSend, "sendMessage");
-				}
-			} else {
-				if ($this->inBaseFirstName($chat_id)==1) {
+		$profile = $this->getProfile($chat_id);
+		if (!$profile) {
+			$dataSend = array(
+				'text' => "Введите пароль",
+				'chat_id' => $chat_id,
+			);
+			$this->requestToTelegram($dataSend, "sendMessage");
+			$conn->query("INSERT INTO bot_spisok (chatid, first_name, second_name, class, ok, theme, level, idgroup) VALUES ('".$chat_id."', '0', '0', '0', '0', '0', '0', '0')");
+		} else {
+			switch ($profile['ok']) {
+				case '0':
+					$res = $conn->query("SELECT * FROM bot_admin WHERE login = 'bot'");
+					$rows = $res->fetch_all(MYSQLI_ASSOC);
+					if ($rows) {
+						foreach ($rows as $row) { 
+							$pswd = $row['pass'];
+						} 
+					}
+					if ($message!=$pswd) {
+						$dataSend = array(
+							'text' => "Введите пароль",
+							'chat_id' => $chat_id,
+						);
+						$this->requestToTelegram($dataSend, "sendMessage");
+					} else {
+						$dataSend = array(
+							'text' => "Отлично. Теперь давайте знакомиться. Введите Ваше имя.",
+							'chat_id' => $chat_id,
+						);
+						$conn->query("UPDATE bot_spisok SET ok='1' WHERE chatid='".$chat_id."'");
+						$this->requestToTelegram($dataSend, "sendMessage");
+					}
+					break;
+				case '1':
 					$txt = "А теперь, ".$message.", введите Вашу фамилию.";
 					$dataSend = array(
 						'text' => $txt,
 						'chat_id' => $chat_id,
 					);
-					require 'connect.php';
-					$conn->query("UPDATE bot_spisok SET first_name='".$message."' WHERE chatid='".$chat_id."'");
-					mysqli_close($conn);				
+					$conn->query("UPDATE bot_spisok SET first_name='".$message."', ok='2' WHERE chatid='".$chat_id."'");
 					$this->requestToTelegram($dataSend, "sendMessage");			
-				} elseif ($this->inBaseSecondName($chat_id)==1) {
-					$profile = $this->getProfile($chat_id);
+					break;
+				case '2':
 					$txt = "Теперь, ".$profile['first_name'].", выберите Ваш класс.";
 					$dataSend = array(
 						'text' => $txt,
 						'chat_id' => $chat_id,
 						'reply_markup' => $this->getInlineKeyBoard($this->stroimKbd(0, 4)),
 					);
-					require 'connect.php';
-					$conn->query("UPDATE bot_spisok SET second_name='".$message."' WHERE chatid='".$chat_id."'");
-					mysqli_close($conn);				
+					if ($profile['second_name'] == '0') 
+						$conn->query("UPDATE bot_spisok SET second_name='".$message."', ok='3' WHERE chatid='".$chat_id."'");
+					else 
+						$conn->query("UPDATE bot_spisok SET ok='3' WHERE chatid='".$chat_id."'");
 					$this->requestToTelegram($dataSend, "sendMessage");			
-				} elseif ($this->inBaseClass($chat_id)==1) {
-					$profile = $this->getProfile($chat_id);
+					break;
+				case '3':
 					$txt = "Спасибо, ".$profile['first_name'].". 
 					
 					Нажми кнопку 'Темы', чтобы выбрать тему для изучения.";
@@ -89,124 +102,117 @@ class Bot
 						'chat_id' => $chat_id,
 						'reply_markup' => $justKeyboard,
 					);
-					require 'connect.php';
-					$conn->query("UPDATE bot_spisok SET class='".$message."', ok='ok' WHERE chatid='".$chat_id."'");
-					mysqli_close($conn);				
+					$conn->query("UPDATE bot_spisok SET class='".$message."', ok='4' WHERE chatid='".$chat_id."'");
 					$this->requestToTelegram($dataSend, "sendMessage");	
-				}
-			}
-		} else {
-			switch ($message) {
-				case 'Темы':
-					$profile = $this->getProfile($chat_id);
-					$dataSend = array(
-						'text' => 'Выберите тему по информатике '.$profile['class'].' класса.',
-						'chat_id' => $chat_id,
-						'reply_markup' => $justKeyboard,
-					);
-					$this->requestToTelegram($dataSend, "sendMessage");
-					$dataSend = array(
-						'text' => 'Темы:',
-						'chat_id' => $chat_id,
-						'reply_markup' => $this->getInlineKeyBoard($this->stroimKbd($profile['class'], 1)),
-					);
-					$this->requestToTelegram($dataSend, "sendMessage");
 					break;
-				case '/help':
-					$dataSend = array(
-						'text' => "Значения кнопок:",
-						'chat_id' => $chat_id,
-					);
-					$this->requestToTelegram($dataSend, "sendMessage");
-					break;
-				case (preg_match('/^Задания/', $message) ? true : false):
-				case (preg_match('/^Теория/', $message) ? true : false):
-					require 'connect.php';
-					$conn->query("UPDATE bot_spisok SET level='".$message."' WHERE chatid='".$chat_id."'");
-					$dataSend = array(
-						'text' => $message.': '.$this->getLink($message, $chat_id),
-						'chat_id' => $chat_id,
-					);
-					$this->requestToTelegram($dataSend, "sendMessage");
-					break;
-				case 'Вопрос учителю':
-					$dataSend = array(
-						'text' => 'Чтобы отправить вопрос учителю, отправьте сообщение в следющем формате: #вопрос текст_вопроса. Например,
-						#вопрос можно я доделаю практическую работу на следующем уроке?',
-						'chat_id' => $chat_id,
-					);
-					$this->requestToTelegram($dataSend, "sendMessage");
-					break;				
-				case (preg_match('/^#вопрос/', $message) ? true : false):
-					$profile = $this->getProfile($chat_id);
-					$message = str_replace("#вопрос ", "", $message);
-					$message = 'Чат: '.$chat_id.' ||| Имя: '.$profile['first_name'].' ||| Фамилия: '.$profile['second_name'].' ||| Класс: '.$profile['class'].' ||| Вопрос: '.$message;
-					$dataSend = array(
-						'text' => $message,
-						'chat_id' => '391741304',
-					);
-					$this->requestToTelegram($dataSend, "sendMessage");
-					break;
-				case (preg_match('/^#ответ/', $message) ? true : false): // $ответ$391741304$текст ответа
-					$data = explode('#', $message);
-					$dataSend = array(
-						'text' => 'Ответ учителя: '.$data[3],
-						'chat_id' => $data[2],
-					);
-					$this->requestToTelegram($dataSend, "sendMessage");
-					break;
-				case 'Сдать работу':
-					$dataSend = array(
-						'text' => 'Чтобы сдать работу:
-						1) загрузите вашу работу в любое облачное хранилище (Google Drive, Яндекс Диск и т.п.)
-						2) создайте ссылку на документ с возможностью редактирования
-						3) отправьте в этот чат сообщение в формате: #работа#ID_работы#https://ссылка_на_ваш_документ
-						
-						ID работы написан в начале текста работы.',
-						'chat_id' => $chat_id,
-					);
-					$this->requestToTelegram($dataSend, "sendMessage");
-					break;				
-				case (preg_match('/^#работа#/', $message) ? true : false):
-					$mes = explode('#', $message);
-					$today = date("Y-m-d H:i:s");
-					require 'connect.php';
-					$conn->query("INSERT INTO bot_work (time, chatid, idwork, url) VALUES ('".$today."', '".$chat_id."', '".$mes[2]."', '".$mes[3]."')");
-					mysqli_close($conn);
-					$dataSend = array(
-						'text' => 'Ваша работа принята',
-						'chat_id' => $chat_id,
-					);
-					$this->requestToTelegram($dataSend, "sendMessage");
-					break;				
-				default:
-					$n=substr_count($message, '-');
-					if ($n==1) {
-						if ($this->themeInBase($message) == 1) {  
-							require 'connect.php';
-							$conn->query("UPDATE bot_spisok SET theme='".$message."' WHERE chatid='".$chat_id."'");
-							mysqli_close($conn);
+				case '4':
+					switch ($message) {
+						case 'Темы':
+							$profile = $this->getProfile($chat_id);
 							$dataSend = array(
-								'text' => 'Выберите, чем заняться. Поработать с теорией или порешать задачки?
-								
-								Тема: '.$this->themeTxt($message, $chat_id),
+								'text' => 'Выберите тему по информатике '.$profile['class'].' класса.',
 								'chat_id' => $chat_id,
-								'reply_markup' => $this->getKeyBoard($this->stroimKbdLevel($message)),
+								'reply_markup' => $justKeyboard,
 							);
+							$this->requestToTelegram($dataSend, "sendMessage");
+							$dataSend = array(
+								'text' => 'Темы:',
+								'chat_id' => $chat_id,
+								'reply_markup' => $this->getInlineKeyBoard($this->stroimKbd($profile['class'], 1)),
+							);
+							$this->requestToTelegram($dataSend, "sendMessage");
+							break;
+						case '/help':
+							$dataSend = array(
+								'text' => "Значения кнопок:",
+								'chat_id' => $chat_id,
+							);
+							$this->requestToTelegram($dataSend, "sendMessage");
+							break;
+						case (preg_match('/^Задания/', $message) ? true : false):
+						case (preg_match('/^Теория/', $message) ? true : false):
+							$conn->query("UPDATE bot_spisok SET level='".$message."' WHERE chatid='".$chat_id."'");
+							$dataSend = array(
+								'text' => $message.': '.$this->getLink($message, $chat_id),
+								'chat_id' => $chat_id,
+							);
+							$this->requestToTelegram($dataSend, "sendMessage");
+							break;
+						case 'Вопрос учителю':
+							$dataSend = array(
+								'text' => 'Чтобы отправить вопрос учителю, отправьте сообщение в следющем формате: #вопрос текст_вопроса. Например,
+								#вопрос можно я доделаю практическую работу на следующем уроке?',
+								'chat_id' => $chat_id,
+							);
+							$this->requestToTelegram($dataSend, "sendMessage");
+							break;				
+						case (preg_match('/^#вопрос/', $message) ? true : false):
+							$profile = $this->getProfile($chat_id);
+							$message = str_replace("#вопрос ", "", $message);
+							$message = 'Чат: '.$chat_id.' ||| Имя: '.$profile['first_name'].' ||| Фамилия: '.$profile['second_name'].' ||| Класс: '.$profile['class'].' ||| Вопрос: '.$message;
+							$dataSend = array(
+								'text' => $message,
+								'chat_id' => '391741304',
+							);
+							$this->requestToTelegram($dataSend, "sendMessage");
+							break;
+						case (preg_match('/^#ответ/', $message) ? true : false): // $ответ$391741304$текст ответа
+							$data = explode('#', $message);
+							$dataSend = array(
+								'text' => 'Ответ учителя: '.$data[3],
+								'chat_id' => $data[2],
+							);
+							$this->requestToTelegram($dataSend, "sendMessage");
+							break;
+						case 'Сдать работу':
+							$dataSend = array(
+								'text' => 'Чтобы сдать работу:
+								1) загрузите вашу работу в любое облачное хранилище (Google Drive, Яндекс Диск и т.п.)
+								2) создайте ссылку на документ с возможностью редактирования
+								3) отправьте в этот чат сообщение в формате: #работа#ID_работы#ссылка_на_ваш_документ
+								
+								ID работы написан в начале текста работы.',
+								'chat_id' => $chat_id,
+							);
+							$this->requestToTelegram($dataSend, "sendMessage");
+							break;				
+						case (preg_match('/^#работа#/', $message) ? true : false):
+							$mes = explode('#', $message);
+							$today = date("Y-m-d H:i:s");
+							$conn->query("INSERT INTO bot_work (time, chatid, idwork, url) VALUES ('".$today."', '".$chat_id."', '".$mes[2]."', '".$mes[3]."')");
+							$dataSend = array(
+								'text' => 'Ваша работа принята',
+								'chat_id' => $chat_id,
+							);
+							$this->requestToTelegram($dataSend, "sendMessage");
+							break;				
+						default:
+							$n=substr_count($message, '-');
+							if ($n==1) {
+								if ($this->themeInBase($message) == 1) {  
+									$conn->query("UPDATE bot_spisok SET theme='".$message."' WHERE chatid='".$chat_id."'");
+									$dataSend = array(
+										'text' => 'Выберите, чем заняться. Поработать с теорией или порешать задачки?
+										
+										Тема: '.$this->themeTxt($message, $chat_id),
+										'chat_id' => $chat_id,
+										'reply_markup' => $this->getKeyBoard($this->stroimKbdLevel($message)),
+									);
+								}
+							} else {
+								$dataSend = array(
+									'text' => $message,
+									'chat_id' => $chat_id,
+									'reply_markup' => $justKeyboard,
+								);
+							}
+							$this->requestToTelegram($dataSend, "sendMessage");
+							break;
 						}
-					} else {
-						$dataSend = array(
-							'text' => $message,
-							'chat_id' => $chat_id,
-							'reply_markup' => $justKeyboard,
-						);
-					}
-					$this->requestToTelegram($dataSend, "sendMessage");
-					break;
-				}
-		}	
-	} 
-	
+			}
+		} 
+		mysqli_close($conn);
+	}
 
     /**
      * создаем inline клавиатуру
@@ -263,62 +269,7 @@ class Bot
         }
         return $result;
     }
-	
-	private	function inBase($chat_id)
-    {
-        require 'connect.php';
-		$result = 0;
-		$res = $conn->query("SELECT * FROM bot_spisok WHERE chatid = '".$chat_id."'");
-		$rows = $res->fetch_all(MYSQLI_ASSOC);
-		if ($rows) $result=1;
-		mysqli_close($conn); 
-        return $result;
-    }
-	
-	private	function inBaseFirstName($chat_id)
-    {
-        require 'connect.php';
-		$result = 0;
-		$res = $conn->query("SELECT * FROM bot_spisok WHERE chatid = '".$chat_id."' AND first_name = '0'");
-		$rows = $res->fetch_all(MYSQLI_ASSOC);
-		if ($rows) $result=1;
-		mysqli_close($conn); 
-        return $result;
-    }
-	
-	private	function inBaseSecondName($chat_id)
-    {
-        require 'connect.php';
-		$result = 0;
-		$res = $conn->query("SELECT * FROM bot_spisok WHERE chatid = '".$chat_id."' AND second_name = '0'");
-		$rows = $res->fetch_all(MYSQLI_ASSOC);
-		if ($rows) $result=1;
-		mysqli_close($conn); 
-        return $result;
-    }
-	
-	private	function inBaseClass($chat_id)
-    {
-        require 'connect.php';
-		$result = 0;
-		$res = $conn->query("SELECT * FROM bot_spisok WHERE chatid = '".$chat_id."' AND class = '0'");
-		$rows = $res->fetch_all(MYSQLI_ASSOC);
-		if ($rows) $result=1;
-		mysqli_close($conn); 
-        return $result;
-    }
-	
-	private	function inBaseOk($chat_id)
-    {
-        require 'connect.php';
-		$result = 0;
-		$res = $conn->query("SELECT * FROM bot_spisok WHERE chatid = '".$chat_id."' AND ok = 'ok'");
-		$rows = $res->fetch_all(MYSQLI_ASSOC);
-		if ($rows) $result=1;
-		mysqli_close($conn); 
-        return $result;
-    }
-	
+		
 	private	function themeInBase($data)
     {
         require 'connect.php';
@@ -329,7 +280,6 @@ class Bot
 		mysqli_close($conn); 
         return $result;
     }
-
 	
 	private	function getProfile($chat_id)
     {
